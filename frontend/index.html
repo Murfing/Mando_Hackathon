@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuraParse - AI Document Q&A</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Optional: Add Google Fonts link here if desired -->
+    <!-- <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"> -->
+</head>
+<body>
+    <header class="app-header">
+        <div class="container header-content">
+             <!-- Logo Placeholder: 
+                  1. Place your logo file (e.g., logo.png or logo.svg) inside the frontend/assets/ directory.
+                  2. Update the src="/static/assets/YOUR_LOGO_FILENAME" below. 
+             -->
+            <img src="/static/assets/my_logo.png" alt="NeuraParse Logo" class="logo-img">
+            
+            <p class="subtitle">AI-Powered Document Q&A</p>
+        </div>
+    </header>
+
+    <main class="container">
+        
+
+        <!-- File Upload Section -->
+        <section class="card upload-card">
+            <h2><span class="step-number">1</span> Upload Documents</h2>
+            <form id="upload-form">
+                <label for="file-input">Select files to process:</label>
+                <div class="file-input-wrapper">
+                    <input type="file" id="file-input" name="files" multiple required>
+                    <span class="file-input-label">Choose files...</span>
+                </div>
+                <!-- Container where selected filenames will be displayed -->
+                <div id="selected-files-container" class="file-list"></div>
+                <p class="supported-types-info">
+                    Supported types: .pdf, .docx, .pptx, .xlsx, .csv, .json, .txt, .md, .html, .jpg, .png, .tiff, .bmp
+                </p>
+                <button type="submit" id="upload-button">Upload Files</button>
+            </form>
+            <div id="upload-status" class="status"></div>
+        </section>
+
+        <!-- Q&A Section -->
+        <section class="card qa-card">
+            <h2><span class="step-number">2</span> Ask a Question</h2>
+            <form id="query-form">
+                <label for="question-input">Ask about the uploaded documents:</label>
+                <textarea id="question-input" name="question" rows="4" required placeholder="e.g., What are the key financial risks mentioned?"></textarea>
+                <button type="submit" id="query-button">Get Answer</button>
+            </form>
+            <div id="query-status" class="status"></div>
+            <div id="answer-container" class="hidden">
+                <h3>Answer</h3>
+                <div id="answer-text"></div>
+                <h4>Sources Used:</h4>
+                <ul id="sources-list"></ul>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <div class="container">
+            <p>&copy; 2024 NeuraParse. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="/static/script.js"></script>
+</body>
+</html> 

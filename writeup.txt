@@ -1,0 +1,132 @@
+Core Pipeline Overview
+The application follows a standard Retrieval-Augmented Generation (RAG) pattern:
+Ingestion: Users upload documents. The backend processes these files, extracts text (using OCR if needed), splits the text into manageable chunks, generates numerical vector representations (embeddings) for each chunk using a Gemini embedding model, and stores these embeddings along with the text and metadata in a vector database (FAISS).
+Retrieval: When a user asks a question, the backend generates an embedding for the question using the same Gemini embedding model (but flagged as a query). It then searches the vector database to find the document chunks whose embeddings are most semantically similar to the question embedding.
+Generation: The retrieved document chunks (the context) and the original user question are combined into a prompt. This prompt is sent to a Gemini large language model (LLM), instructing it to answer the question based only on the provided context.
+Response: The backend sends the LLM's generated answer, along with information about the source document chunks used, back to the user interface.
+Detailed File Breakdown and Logic Verification
+Let's trace the data flow through the key files:
+frontend/index.html:
+Role: Defines the basic structure of the web page the user sees. Contains forms for file upload and question input, and divs to display status messages, answers, and sources.
+Links: Links to style.css for appearance and script.js for functionality.
+Verification: The element IDs (upload-form, file-input, question-input, answer-text, etc.) match those used in script.js. The structure is simple and functional for the intended purpose. Logic seems correct.
+frontend/style.css:
+Role: Provides basic CSS rules to make the index.html page presentable. Styles the container, cards, forms, buttons, and status/answer areas.
+Verification: Contains styles for .status.loading, .status.success, .status.error used by the JavaScript. Defines .hidden class. Basic styling applied correctly. Logic seems correct.
+frontend/script.js:
+Role: Handles user interactions on the frontend. Listens for form submissions, sends requests to the backend API, and updates the HTML page based on the responses.
+Upload Logic:
+Listens for submit on #upload-form.
+Prevents default submission.
+Gets files from #file-input.
+Creates FormData and appends files.
+Sends a POST request using fetch to /api/upload/.
+Updates #upload-status div based on success/failure/loading.
+Disables/enables form elements during upload.
+Query Logic:
+Listens for submit on #query-form.
+Gets question text from #question-input.
+Sends a POST request using fetch to /api/query/ with the question in JSON format.
+Updates #query-status div.
+Disables/enables form elements.
+On success, populates #answer-text and #sources-list. Handles empty/no sources.
+Shows/hides #answer-container.
+Verification: Uses correct API endpoints (/api/upload/, /api/query/). Uses fetch correctly with FormData for uploads and JSON for queries. Handles response status codes (response.ok). Updates status divs and disables forms appropriately. Displays answer and sources. Includes console.log and console.error for debugging. Logic seems correct.
+backend/app.py:
+Role: The main FastAPI application. It defines API endpoints, initializes shared resources (like logging and the vector store), and serves the static frontend files.
+Initialization:
+Sets up logging via utils.helpers.setup_logging.
+Loads environment variables (implicitly via dotenv in helpers/other modules).
+Determines embedding dimension via indexing.embedder.get_embedding_dimension.
+Initializes the vector store via indexing.vector_store.get_vector_store, handling potential errors.
+Static File Serving:
+Correctly calculates FRONTEND_DIR.
+Mounts /static (though not strictly needed for current index.html references) using StaticFiles.
+Serves index.html from FRONTEND_DIR at the root path (/) using FileResponse. Includes fallback if files aren't found.
+/api/upload/ Endpoint:
+Receives uploaded files.
+Sanitizes filenames.
+Checks vector store validity.
+Iterates through files, saves temporarily to UPLOAD_DIR.
+Calls ingestion.file_router.process_file for each file, passing the vector_store instance.
+Handles exceptions during processing, cleans up failed temp files.
+Calls vector_store.save() after processing all files (important for FAISS).
+Returns a JSON response summarizing results.
+Logging and timing seem thorough.
+/api/query/ Endpoint:
+Receives question JSON.
+Checks vector store validity.
+Calls qa.retriever.retrieve_chunks, passing the question and vector_store.
+If chunks are found, formats context (\n---\n separated content).
+Calls qa.answer_generator.generate_answer with the question and context.
+Formats the final response including the answer and source details (metadata, snippet, score).
+Returns the AnswerResponse.
+Logging and timing seem thorough.
+/api/health Endpoint: Basic health check.
+Verification: Correctly uses the factory function for the vector store. Handles initialization errors. Serves frontend correctly. API endpoints use the /api prefix consistently. Passes vector_store instance down the chain. Calls save() on the store. Logging is good. Logic seems correct.
+backend/ingestion/file_router.py:
+Role: Central dispatcher for processing uploaded files based on their type. Orchestrates extraction, OCR, and indexing.
+Logic:
+Determines file type from extension using SUPPORTED_EXTENSIONS.
+Calls ingestion.extractor.extract_text.
+If extraction indicates needs_ocr or file type is image, calls ingestion.ocr_handler.handle_ocr.
+Combines extracted/OCR text.
+(Link crawling is disabled by default).
+Calls indexing.embedder.embed_and_index_chunks with the final text, the vector_store instance, and metadata.
+Returns the result dictionary from the indexing step.
+Verification: Correctly routes based on type. Handles OCR triggering. Passes correct arguments down the chain. Returns status appropriately. Logic seems correct.
+backend/ingestion/extractor.py:
+Role: Extracts text content from various file formats.
+Logic: Contains functions like extract_text_from_pdf, extract_text_from_docx, etc. Uses libraries like PyMuPDF, python-docx. The PDF extractor has logic to guess if OCR is needed. The main extract_text function acts as a dispatcher.
+Verification: Logic for implemented types (PDF, DOCX, TXT, CSV, JSON) seems reasonable. Error handling within functions is present. OCR flag logic is a heuristic but functional. Logic seems correct.
+backend/ingestion/ocr_handler.py:
+Role: Performs Optical Character Recognition (OCR) on images or image-based PDFs using pytesseract.
+Logic: Configures Tesseract path. ocr_image_file handles image files. ocr_pdf iterates PDF pages, renders them as images using PyMuPDF, and performs OCR on each page image. handle_ocr dispatches based on file type.
+Verification: Correctly uses libraries. PDF page rendering increases DPI for potentially better results. Handles Tesseract/PIL errors. Logic seems correct.
+backend/ingestion/crawler.py: (Currently Disabled)
+Role: Finds URLs in text and crawls them to fetch additional content.
+Logic: Basic regex for link finding. crawl_url fetches content, respects depth limits, uses a user agent, handles timeouts/errors, extracts text from HTML. crawl_links orchestrates the process.
+Verification: Logic is basic but functional for simple cases. Needs significant enhancements (robots.txt, error handling, robustness) for real-world use, but okay as a disabled placeholder.
+backend/indexing/embedder.py:
+Role: Handles text chunking and generating embeddings using the Gemini API.
+Logic: Initializes Gemini API on import. chunk_text splits text. get_embeddings calls genai.embed_content in batches, specifying task_type (RETRIEVAL_DOCUMENT or RETRIEVAL_QUERY). embed_and_index_chunks orchestrates chunking, calls get_embeddings (with RETRIEVAL_DOCUMENT), prepares metadata/IDs, and calls vector_store.add_documents.
+Verification: Correctly uses Gemini API. Specifies correct task_type. Handles batching. Passes correct arguments to vector_store. Dimension (768) is correctly identified. Logic seems correct.
+backend/indexing/vector_store.py:
+Role: Provides an abstraction for the vector database and implements the FAISS version.
+Logic: Defines BaseVectorStore. FAISSVectorStore uses faiss-cpu. It maintains an in-memory FAISS index (IndexFlatL2) and a Python dictionary (doc_metadata_map) mapping FAISS's internal integer IDs to the original text, metadata, and our generated chunk IDs. add_documents adds embeddings/IDs to FAISS and populates the map. search queries FAISS, gets back FAISS IDs and distances, then uses the map to retrieve the corresponding text/metadata. save/load persist/restore the FAISS index file and the metadata map (as JSON). get_vector_store selects and initializes FAISSVectorStore.
+Verification: FAISS index type (IndexFlatL2) is suitable for moderate data sizes. ID mapping logic is necessary and correctly implemented. Save/load handles both index and metadata. Search retrieves corresponding data correctly. Logic seems correct, with the noted lack of metadata filtering during search.
+backend/qa/retriever.py:
+Role: Retrieves relevant document chunks from the vector store based on a user query.
+Logic: Gets the query embedding using get_embeddings (with task_type="RETRIEVAL_QUERY"). Calls the vector_store.search method (which will execute the FAISS search via the passed instance), providing the query embedding and top_k. Returns the list of result dictionaries.
+Verification: Correctly specifies the RETRIEVAL_QUERY task type. Correctly calls the search method on the passed vector_store object. Logic seems correct.
+backend/qa/answer_generator.py:
+Role: Generates a final answer using a Gemini LLM, based on the user query and retrieved context.
+Logic: Initializes Gemini LLM model (gemini-1.5-flash or gemini-pro). Constructs a prompt containing the retrieved context and the user query, instructing the model to answer only from the context. Calls generate_content and processes the response, handling potential errors or blocked content.
+Verification: Prompt structure is standard for RAG. Uses appropriate Gemini model and API call. Handles response states. Logic seems correct.
+backend/utils/helpers.py:
+Role: Contains common utility functions.
+Logic: Provides setup_logging, sanitize_filename, and a Timer class.
+Verification: Utilities are functional and used correctly in other modules. Logic seems correct.
+Pipeline Summary & Conclusion:
+The pipeline appears logically sound and correctly implemented according to the plan (FAISS vector store, Gemini embeddings, Gemini LLM, simple frontend served by backend).
+Backend starts, initializes logging, Gemini clients, and the FAISS vector store (loading existing index/metadata if found, otherwise creating new ones).
+User accesses /, FastAPI serves frontend/index.html.
+Browser loads style.css and script.js.
+User selects files and clicks Upload. script.js sends files to /api/upload.
+app.py receives files, calls file_router.process_file.
+file_router -> extractor -> (maybe ocr_handler) -> embedder.embed_and_index_chunks.
+embedder chunks text, calls genai.embed_content (document task) for embeddings.
+embedder calls vector_store.add_documents (FAISS impl).
+FAISS store adds embeddings to the index and text/metadata to the map.
+app.py calls vector_store.save() to persist the FAISS index and metadata map.
+script.js shows success/error.
+User types question and clicks Ask. script.js sends question to /api/query.
+app.py receives question, calls retriever.retrieve_chunks.
+retriever calls embedder.get_embeddings (query task) for the question embedding.
+retriever calls vector_store.search (FAISS impl).
+FAISS store searches index, looks up results in the metadata map, returns chunks.
+app.py receives chunks, calls answer_generator.generate_answer with question and formatted context.
+answer_generator calls Gemini LLM API.
+app.py receives answer, formats response.
+script.js receives response, displays answer and sources.
+The integration points seem correct, and the logging should provide good visibility if issues arise. The switch to Gemini embeddings and the simplified frontend have been incorporated correctly.

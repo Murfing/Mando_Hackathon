@@ -1,0 +1,30 @@
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+
+# Ingestion - Choose based on needs
+pymupdf
+pdfplumber
+python-docx
+python-pptx
+openpyxl
+pandas
+pytesseract 
+requests
+beautifulsoup4
+
+# Indexing & Embedding - Choose one vector store
+# sentence-transformers # No longer needed
+faiss-cpu 
+numpy # Required by FAISS and vector_store.py logic
+# or chromadb 
+
+# QA
+google-generativeai 
+
+# Frontend (If building with Python for templates, e.g., Jinja2)
+# jinja2
+
+# Testing
+# pytest 
