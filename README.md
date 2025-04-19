@@ -128,12 +128,10 @@ This project implements a system for answering questions based on a collection o
 
 ## 🔮 Future Improvements (TODO)
 
-- [ ] **Asynchronous Processing:** Implement background tasks (FastAPI BackgroundTasks or Celery) for file ingestion to prevent blocking the server during long uploads/processing.
+- [ ] **Chain History** Implement Q&A chatbot chain with history
 - [ ] **Error Handling:** Enhance user feedback for processing errors directly in the UI.
 - [ ] **Search Enhancements:** Implement hybrid search (keyword + semantic) and metadata filtering.
-- [ ] **Testing:** Add comprehensive unit and integration tests.
-- [ ] **Deployment:** Containerize using Docker.
+- [ ] **Deployment:** Containerize using Docker.(Could't find a free platform to host it)
 - [ ] **Multi-User:** Add user authentication/sessions.
 - [ ] **Prompt Engineering:** Explore advanced prompting techniques (e.g., few-shot, HyDE).
-- [ ] **Context Management:** Implement context length checks and smarter truncation.
 - [ ] **UI Polish:** Improve visual distinction between sources, add loading indicators for Q&A. 
