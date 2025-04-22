@@ -94,6 +94,7 @@ This project implements a system for answering questions based on uploaded docum
 
 ## 🔮 Future Improvements (TODO)
 
+- [ ] **Prompt Engineering:** Explore advanced prompting techniques (e.g., few-shot, HyDE).
 - [ ] **Asynchronous Processing:** Implement background tasks for uploads and analysis.
 - [ ] **Error Handling & UI Feedback:** Improve reporting for processing errors.
 - [ ] **Search/Retrieval:** Hybrid search, metadata filtering.
