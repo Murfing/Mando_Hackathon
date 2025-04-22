@@ -11,8 +11,6 @@ python-pptx
 openpyxl
 pandas
 pytesseract 
-requests
-beautifulsoup4
 
 # Indexing & Embedding - Choose one vector store
 # sentence-transformers # No longer needed
@@ -25,6 +23,19 @@ google-generativeai
 
 # Frontend (If building with Python for templates, e.g., Jinja2)
 # jinja2
+
+# Visualizer (MindPalace Integration)
+requests # For GitHub scraping / URL fetching
+beautifulsoup4 # For HTML parsing (if scraper needs it)
+mistralai # If MindPalace uses Mistral
+streamlit-mermaid # For MindPalace mindmap generation (maybe client side? check usage)
+langchain
+langchain-core
+langchain-google-genai
+langchain-community
+# faiss-cpu is already listed above
+# Add any specific mindmap generation libraries if needed server-side
+# Add any other specific dependencies from MindPalace's requirements.txt
 
 # Testing
 # pytest 

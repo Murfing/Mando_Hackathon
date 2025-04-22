@@ -3,8 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NeuraParse - AI Document Q&A</title>
+    <title>NeuraParse - AI Document Q&A & Visualizer</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <link rel="stylesheet" href="/static/style.css">
+    <!-- REMOVE Markmap Assets -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/d3@7"></script> -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.4"></script> -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/markmap-lib"></script> -->
+    
+    <!-- ADD Mermaid Asset -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+
     <!-- Optional: Add Google Fonts link here if desired -->
     <!-- <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,56 +26,119 @@
 </head>
 <body>
     <header class="app-header">
-        <div class="container header-content">
-             <!-- Logo Placeholder: 
-                  1. Place your logo file (e.g., logo.png or logo.svg) inside the frontend/assets/ directory.
-                  2. Update the src="/static/assets/YOUR_LOGO_FILENAME" below. 
-             -->
-            <img src="/static/assets/my_logo.png" alt="NeuraParse Logo" class="logo-img">
+        <div class="header-content">
+            <!-- Left side: Logo and Title -->
+            <div class="header-branding">
+                <img src="/static/assets/logo.png" alt="NeuraParse Logo" class="logo-img">
+                <span class="app-title">Neura Parse</span>
+            </div>
             
-            <p class="subtitle">AI-Powered Document Q&A</p>
+            <!-- Right side: Navigation -->
+            <nav class="page-nav">
+                <button id="nav-qa" class="nav-button active">Document Q&A</button>
+                <button id="nav-visualizer" class="nav-button">Visualizer</button>
+            </nav>
         </div>
     </header>
 
-    <main class="container">
-        
+    <!-- Page Content Area -->
+    <div id="page-content">
+        <!-- Q&A Page Content -->
+        <main id="qa-page" class="container page active-page">
+            <section class="intro-text">
+                <p>Welcome to <strong>NeuraParse</strong>. Upload your documents and ask questions to get intelligent, context-aware answers instantly.</p>
+            </section>
 
-        <!-- File Upload Section -->
-        <section class="card upload-card">
-            <h2><span class="step-number">1</span> Upload Documents</h2>
-            <form id="upload-form">
-                <label for="file-input">Select files to process:</label>
-                <div class="file-input-wrapper">
-                    <input type="file" id="file-input" name="files" multiple required>
-                    <span class="file-input-label">Choose files...</span>
+            <!-- ADDED: Wrapper for two-column layout -->
+            <div class="qa-content-wrapper">
+                
+                <!-- Column 1: File Upload Section -->
+                <section class="card upload-card qa-column">
+                    <h2><span class="step-number">1</span> Upload Documents</h2>
+                    <form id="upload-form">
+                        <label for="file-input">Select files to process:</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="file-input" name="files" multiple required>
+                            <span class="file-input-label">Choose files...</span>
+                        </div>
+                        <div id="selected-files-container" class="file-list"></div>
+                        <p class="supported-types-info">
+                            Supported types: .pdf, .docx, .pptx, .xlsx, .csv, .json, .txt, .md, .html, .jpg, .png, .tiff, .bmp
+                        </p>
+                        <button type="submit" id="upload-button">Upload Files</button>
+                    </form>
+                    <div id="upload-status" class="status"></div>
+                </section>
+
+                <!-- Column 2: Q&A Section -->
+                <section class="card qa-card qa-column">
+                    <h2><span class="step-number">2</span> Ask a Question</h2>
+                    <form id="query-form">
+                        <label for="question-input">Ask about the uploaded documents:</label>
+                        <textarea id="question-input" name="question" rows="4" required placeholder="e.g., What are the key financial risks mentioned?"></textarea>
+                        <button type="submit" id="query-button">Get Answer</button>
+                    </form>
+                    <div id="query-status" class="status"></div>
+                    <div id="answer-container" class="hidden">
+                        <h3>Answer</h3>
+                        <div id="answer-text"></div>
+                        <h4>Sources Used:</h4>
+                        <ul id="sources-list"></ul>
+                    </div>
+                </section>
+                
+            </div> <!-- END: qa-content-wrapper -->
+        </main>
+
+        <!-- Visualizer Page Content -->
+        <main id="visualizer-page" class="container page">
+            <section class="card visualizer-input-card">
+                <h2>Visualize Repository or PDF</h2>
+                <form id="visualizer-form">
+                    <label for="github-url">GitHub Repository URL:</label>
+                    <input type="url" id="github-url" name="github_url" placeholder="https://github.com/user/repo">
+                    
+                    <p class="or-divider">OR</p>
+
+                    <label for="pdf-visual-input">Upload PDF for Visualization:</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="pdf-visual-input" name="pdf_file" accept=".pdf">
+                        <span class="file-input-label">Choose PDF file...</span>
+                    </div>
+                    <div id="visual-pdf-list" class="file-list"></div>
+                    
+                    <!-- Wrap button in container div for better alignment -->
+                    <div class="visualizer-button-container">
+                        <button type="submit" id="visualize-button">Generate Visualization</button>
+                    </div>
+                </form>
+                <div id="visualizer-status" class="status"></div>
+            </section>
+            
+            <!-- Standalone Mindmap Container -->
+            <div id="visualizer-mindmap-container" class="hidden"> 
+                <div class="mindmap-header">
+                    <h2>Generated Visualization</h2>
+                    <div class="mindmap-controls">
+                        <button id="zoom-in" class="control-button" title="Zoom In">+</button>
+                        <button id="zoom-out" class="control-button" title="Zoom Out">-</button>
+                        <button id="reset-zoom" class="control-button" title="Reset Zoom">Reset</button>
+                        <button id="fullscreen-toggle" class="control-button" title="Toggle Fullscreen">
+                            <span class="fullscreen-icon">⛶</span>
+                        </button>
+                    </div>
                 </div>
-                <!-- Container where selected filenames will be displayed -->
-                <div id="selected-files-container" class="file-list"></div>
-                <p class="supported-types-info">
-                    Supported types: .pdf, .docx, .pptx, .xlsx, .csv, .json, .txt, .md, .html, .jpg, .png, .tiff, .bmp
-                </p>
-                <button type="submit" id="upload-button">Upload Files</button>
-            </form>
-            <div id="upload-status" class="status"></div>
-        </section>
-
-        <!-- Q&A Section -->
-        <section class="card qa-card">
-            <h2><span class="step-number">2</span> Ask a Question</h2>
-            <form id="query-form">
-                <label for="question-input">Ask about the uploaded documents:</label>
-                <textarea id="question-input" name="question" rows="4" required placeholder="e.g., What are the key financial risks mentioned?"></textarea>
-                <button type="submit" id="query-button">Get Answer</button>
-            </form>
-            <div id="query-status" class="status"></div>
-            <div id="answer-container" class="hidden">
-                <h3>Answer</h3>
-                <div id="answer-text"></div>
-                <h4>Sources Used:</h4>
-                <ul id="sources-list"></ul>
+                <div id="visualizer-mindmap"></div> 
             </div>
-        </section>
-    </main>
+            
+            <!-- Explanation Card -->
+            <section class="card visualizer-output-card hidden">
+                 <h2>Explanation</h2> 
+                 <div id="visualizer-explanation"></div>
+            </section>
+
+        </main>
+    </div> <!-- End Page Content Area -->
 
     <footer class="app-footer">
         <div class="container">
@@ -70,5 +147,15 @@
     </footer>
 
     <script src="/static/script.js"></script>
+    <!-- REMOVE Markmap initialization script block -->
+    <!-- <script>
+        // Make markmap globally available for script.js
+        window.markmap = window.markmap;
+    </script> -->
+    <!-- ADD Mermaid Initialization (optional but good practice) -->
+    <script>
+        // Initialize Mermaid (can configure options here if needed)
+        mermaid.initialize({ startOnLoad: false }); // We'll render manually
+    </script>
 </body>
 </html> 
