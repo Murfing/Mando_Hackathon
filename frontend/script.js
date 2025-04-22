@@ -122,6 +122,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- Event Listeners (Existing Q&A + New Placeholders) ---
 
+// ADDED: Trigger file input click when the custom label is clicked (for Q&A)
+if (fileInput && fileInputLabel) {
+    fileInputLabel.addEventListener('click', () => {
+        fileInput.click(); // Programmatically click the hidden file input
+    });
+}
+
 // Q&A: Display selected file names
 if (fileInput && selectedFilesContainer && fileInputLabel) {
     fileInput.addEventListener('change', () => {
@@ -277,6 +284,18 @@ if(queryForm) {
 }
 
 // --- Visualizer Page Listeners ---
+
+// ADDED: Trigger file input click when the custom label is clicked (for Visualizer)
+if (pdfVisualInput) {
+    const visualFileInputLabel = pdfVisualInput.nextElementSibling; // Assumes label is next sibling span
+    if (visualFileInputLabel && visualFileInputLabel.classList.contains('file-input-label')) {
+        visualFileInputLabel.addEventListener('click', () => {
+             pdfVisualInput.click(); // Programmatically click the hidden file input
+        });
+    } else {
+        console.error('Could not find the custom file input label for the visualizer PDF input, or it lacks the expected class.');
+    }
+}
 
 // Visualizer: Display selected PDF filename
 if (pdfVisualInput && visualPdfList) {
