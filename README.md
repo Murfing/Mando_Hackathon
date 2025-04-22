@@ -94,14 +94,11 @@ This project implements a system for answering questions based on uploaded docum
 
 ## 🔮 Future Improvements (TODO)
 
-- [ ] **Refine Visualizer Logic:** Improve the adapted MindPalace code (error handling, efficiency, explanation formatting).
 - [ ] **Asynchronous Processing:** Implement background tasks for uploads and analysis.
 - [ ] **Error Handling & UI Feedback:** Improve reporting for processing errors.
 - [ ] **Search/Retrieval:** Hybrid search, metadata filtering.
-- [ ] **Testing:** Unit and integration tests.
 - [ ] **Deployment:** Containerize (Docker).
 - [ ] **Multi-User:** Authentication/sessions.
-- [ ] **Prompt Engineering:** Advanced techniques.
 - [ ] **Context Management:** Token limits.
 - [ ] **UI Polish:** Loading indicators, source distinction.
 
