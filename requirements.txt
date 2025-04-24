@@ -11,6 +11,7 @@ python-pptx
 openpyxl
 pandas
 pytesseract 
+python-multipart
 
 # Indexing & Embedding - Choose one vector store
 # sentence-transformers # No longer needed
