@@ -3,92 +3,136 @@
   <h1>NeuraParse</h1>
 </div>
 
-# NeuraParse - AI Document Q&A & Visualizer
+# NeuraParse: Intelligent Document Q&A and Repository Visualizer
 
-This project implements a system for answering questions based on uploaded documents (Document Q&A) and for generating visual mind maps and explanations for GitHub repositories or PDF documents (Visualizer), leveraging Retrieval-Augmented Generation (RAG) with Google's Gemini AI and incorporating concepts from MindPalace.
+NeuraParse is a multi-functional application designed to help you understand complex information from various sources. It offers two primary features:
 
----
+1.  **Document Q&A:** Upload your documents (PDFs, DOCX, images, CSV, Excel) and ask questions about their content. The system extracts information, including text, images, and tables, uses advanced AI models (Gemini) to understand them, and provides contextually relevant answers based *only* on the uploaded documents.
+2.  **GitHub Repository Visualizer:** Enter a GitHub repository URL to get an AI-generated explanation of the codebase structure, key components, and their relationships, presented as a visual mind map (using Mermaid syntax) and a file structure overview.
 
-## ✨ Features
+## Features
 
-*   **Document Q&A:**
-    *   Upload multiple documents (`.pdf`, `.docx`, `.txt`, etc.).
-    *   Ask questions about the content.
-    *   Receive AI-generated answers based *only* on document context.
-    *   View source snippets used for the answer.
-*   **Visualizer (MindPalace Integration):**
-    *   Analyze a public GitHub repository via URL.
-    *   Analyze an uploaded PDF document.
-    *   Generates a text explanation/summary.
-    *   Generates an interactive mind map visualizing the structure/content (using Markmap.js).
-*   **Common Features:**
-    *   Wide file type support including OCR for images and scanned PDFs.
-    *   Vector indexing (FAISS) for efficient semantic search in Q&A.
-    *   Modern web interface with separate sections for Q&A and Visualizer.
+*   **Multi-Format Document Support:** Handles PDF, DOCX, TXT, Image files (JPG, PNG etc.), CSV, and Excel (XLSX/XLS).
+*   **Intelligent Content Extraction:**
+    *   Extracts text directly from PDF and DOCX files.
+    *   **Uses Gemini Vision:** Analyzes images within PDFs or standalone image files to generate rich descriptions.
+    *   **Uses Gemini & PDFPlumber:** Extracts tables from PDFs, summarizes them using Gemini.
+    *   **Uses Pandas:** Profiles CSV/Excel files (column names, types, null counts, sample data) and creates a textual summary for analysis.
+*   **Contextual Q&A:** Answers questions based *strictly* on the content extracted and summarized from your uploaded documents.
+*   **Source Highlighting:** Indicates which part of which document (including page numbers, image descriptions, or table summaries) was used to generate the answer.
+*   **GitHub Repository Analysis:**
+    *   Fetches repository structure and file contents (excluding binary files).
+    *   Uses AI (Gemini) to analyze code relationships and generate explanations.
+    *   Displays a clear file structure tree.
+    *   Generates a Mermaid flowchart visualizing the architecture.
+*   **Web Interface:** Simple and intuitive UI built with HTML, CSS, and JavaScript.
+*   **FastAPI Backend:** Robust and efficient backend server.
+*   **FAISS Vector Store:** Efficiently stores and retrieves document embeddings for fast Q&A.
 
----
+## How it Works (Document Q&A)
 
-## 🛠️ Tech Stack
+1.  **Upload:** User uploads one or more files via the web interface.
+2.  **Routing & Extraction:**
+    *   The backend identifies the file type (PDF, DOCX, TXT, image, CSV, Excel).
+    *   **PDF:** Extracts text using `PyMuPDF`. Extracts images and tables using `PyMuPDF` and `pdfplumber`.
+    *   **DOCX:** Extracts text using `python-docx`.
+    *   **Images:** No direct text extraction; the image itself is processed later.
+    *   **CSV/Excel:** Uses `pandas` to read the data and generate a profile (column names, types, nulls, shape, sample rows). This profile becomes the "extracted text".
+    *   **(Optional) Link Crawling:** For text-based files (PDF, DOCX, TXT), it can find HTTP(S) links and crawl the linked page (1 level deep) to include its content.
+3.  **Multimodal Processing (Images/Tables):**
+    *   Extracted images (from PDFs or standalone) and tables (from PDFs) are sent to the Gemini Vision API (`gemini-2.0-flash`).
+    *   Gemini generates a textual description/summary for each image or table.
+4.  **Embedding & Indexing:**
+    *   Extracted text (from PDF, DOCX, TXT), CSV/Excel profiles, and the Gemini-generated summaries of images/tables are chunked.
+    *   Each chunk is converted into a vector embedding using a Google Generative AI embedding model.
+    *   Chunks and their embeddings are stored in a FAISS vector database, along with metadata (original filename, page number, type - text/image/table/profile).
+5.  **Query:** User asks a question.
+6.  **Retrieval:** The question is embedded, and the vector store finds the most semantically similar chunks (text, image summaries, table summaries, CSV/Excel profiles).
+7.  **Answer Generation:**
+    *   The retrieved chunks and the original question are passed to a Gemini model (`gemini-2.0-flash`).
+    *   A specific prompt instructs the model to answer based *only* on the provided context chunks. A different prompt is used if the context comes from a CSV/Excel profile, guiding the model on how to interpret the profile data.
+    *   The generated answer and the source metadata of the relevant chunks are returned.
+8.  **Display:** The answer and formatted sources are shown to the user.
+
+## How it Works (GitHub Visualizer)
+
+1.  **Input:** User provides a GitHub repository URL.
+2.  **API Fetching:** The backend uses the GitHub API to recursively fetch the repository's file structure and the content of non-binary files.
+3.  **Structure Generation:** A simple text-based tree view of the repository structure is created.
+4.  **AI Analysis:** The file contents and structure are passed to a Gemini model (`gemini-2.0-flash`) with a prompt asking it to analyze the relationships, identify key components, and generate an overall explanation. It's also asked to represent the relationships in Mermaid flowchart syntax.
+5.  **Display:** The AI-generated explanation, the file structure tree, and the rendered Mermaid mind map are displayed to the user.
+
+## Tech Stack
 
 *   **Backend:** Python, FastAPI, Uvicorn
-*   **AI:** Google Generative AI (Gemini), MistralAI (Optional, for Visualizer)
-*   **Vector Store:** FAISS (`faiss-cpu`)
-*   **File Processing:** PyMuPDF, python-docx, etc., pytesseract (for OCR)
-*   **Web Scraping (Visualizer):** Requests, BeautifulSoup4
 *   **Frontend:** HTML, CSS, JavaScript
-*   **Mind Map Rendering:** Markmap.js (via CDN)
-*   **Environment:** python-dotenv
+*   **AI Models:** Google Generative AI (Gemini Pro/Flash for generation, embeddings, vision)
+*   **Data Handling:** Pandas (CSV/Excel), PyMuPDF (PDF text/images), python-docx (DOCX), pdfplumber (PDF tables)
+*   **Vector Store:** FAISS (CPU version)
+*   **API Interaction:** Requests (GitHub API)
+*   **Environment:** Python 3.10+
 
----
+## Setup and Installation
 
-## 🚀 Getting Started
+1.  **Clone the repository:**
+    ```bash
+    git clone <your-repo-url>
+    cd <repo-directory>
+    ```
+2.  **Create a virtual environment:**
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+    ```
+3.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+4.  **Environment Variables:**
+    Create a `.env` file in the project root directory and add your API keys:
+    ```dotenv
+    GEMINI_API_KEY=YOUR_GOOGLE_GENERATIVE_AI_API_KEY
+    GITHUB_ACCESS_TOKEN=YOUR_GITHUB_PERSONAL_ACCESS_TOKEN # Optional, for higher rate limits
+    ```
+    *   Get your Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+    *   A GitHub token (with `repo` scope) is recommended for the visualizer to avoid rate limiting.
+5.  **Run the application:**
+    ```bash
+    uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
+    ```
+    *   `--reload` enables auto-reloading on code changes (useful for development).
+6.  **Access the application:**
+    Open your web browser and navigate to `http://localhost:8000`.
 
-### Prerequisites
+## Usage
 
-*   Python 3.9+
-*   Pip & Venv
-*   Git
-*   Tesseract OCR (See Step 4 below)
-*   Google Gemini API Key (Required)
-*   GitHub Access Token (Recommended for Visualizer)
-*   Mistral API Key (Optional, if Visualizer implementation uses it)
+*   **Document Q&A:**
+    *   Click "Choose files..." under the "Document Q&A" section.
+    *   Select one or more supported files (PDF, DOCX, TXT, PNG, JPG, CSV, XLSX).
+    *   Wait for the upload and processing confirmation.
+    *   Type your question in the "Ask a question..." box and click "Ask".
+    *   The answer and sources will appear below.
+*   **GitHub Visualizer:**
+    *   Enter a valid GitHub repository URL (e.g., `https://github.com/owner/repo`) in the "GitHub Repository URL" field.
+    *   Click "Analyze Repository".
+    *   Wait for the analysis to complete.
+    *   The explanation, file structure, and mind map will be displayed.
 
-### Setup Instructions
+## Limitations & Future Work
 
-1.  **Clone:** `git clone <url>` and `cd ai-doc-qa-system`
-2.  **Create & Activate Venv:** (See previous README version for specific commands)
-3.  **Install Dependencies:** `pip install -r requirements.txt`
-4.  **Install Tesseract OCR:** Follow OS-specific instructions from [Tesseract Docs](https://tesseract-ocr.github.io/tessdoc/Installation.html) and ensure it's in PATH.
-5.  **Configure Environment Variables (`.env` file):**
-      ```dotenv
-      # --- Required --- 
-      GEMINI_API_KEY="YOUR_ACTUAL_GEMINI_API_KEY"
+*   **Excel (.xls):** Requires the `xlrd` library (optional dependency).
+*   **Password-Protected Files:** Cannot process encrypted or password-protected PDFs/DOCX.
+*   **Complex Formatting:** Might struggle with highly complex layouts or non-standard document structures.
+*   **Link Crawling Depth:** Currently limited to one level deep.
+*   **Visualizer Scalability:** Analysis of very large repositories might be slow or hit API limits.
+*   **Error Handling:** More robust error handling can be added for edge cases during file processing and API calls.
+*   **Visual Element Display:** Currently shows summaries/descriptions of images/tables as sources. Could potentially display the actual visuals.
+*   **Streaming Answers:** Implement streaming for Q&A responses for better UX.
+*   **Configuration:** Make model names, chunk sizes, etc., configurable via `.env`.
 
-      # --- Optional / Recommended --- 
-      # Visualizer Specific Keys
-      GITHUB_ACCESS_TOKEN="YOUR_GITHUB_PAT_OR_LEAVE_BLANK" # For higher rate limits / private repos
-      MISTRAL_API_KEY="YOUR_MISTRAL_API_KEY_OR_LEAVE_BLANK" # If visualizer logic needs it
+## Contributing
 
-      # Q&A / General Configuration
-      UPLOAD_DIR="backend/data/uploads"
-      PROCESSED_DIR="backend/data/processed"
-      VECTOR_STORE_PATH="backend/data/processed/vector_store"
-      LOG_LEVEL="INFO"
-      TESSERACT_CMD="" # Optional: Path if tesseract not in system PATH
-      ```
-
-### Running the Application
-
-1.  **Start Backend:** `uvicorn backend.app:app --reload --port 8000` (from project root, venv active)
-2.  **Access Frontend:** Open `http://localhost:8000/` in your browser.
-
----
-
-## 📝 Usage
-
-*   Use the **Document Q&A** / **Visualizer** buttons at the top to switch modes.
-*   **Document Q&A:** Upload files, wait for processing, ask questions.
-*   **Visualizer:** Enter a GitHub URL *or* upload a PDF, click "Generate Visualization", view explanation and mind map.
+Contributions are welcome! Please feel free to submit pull requests or open issues.
 
 ---
 

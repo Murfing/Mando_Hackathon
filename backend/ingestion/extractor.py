@@ -5,12 +5,65 @@ import json
 import logging
 import os
 from typing import Dict, Any, List, Optional
-import pdfplumber # ADDED
+import pdfplumber
+import traceback # For detailed error logging
 
 # Get the logger instance
 logger = logging.getLogger(__name__)
 
 # TODO: Add support for pptx (python-pptx), xlsx (openpyxl), html (BeautifulSoup)
+
+# --- Helper for Profiling --- 
+def _create_profile_text(df: pd.DataFrame, sheet_name: Optional[str] = None) -> str:
+    """Generates a structured text profile from a DataFrame."""
+    profile = []
+    if sheet_name:
+        profile.append(f"Sheet: {sheet_name}")
+    else:
+        profile.append("Data File Summary") # For CSV
+    
+    profile.append(f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
+    profile.append("Columns:")
+    # Limit number of columns profiled if extremely wide
+    max_cols_to_profile = 50 
+    cols_to_profile = df.columns[:max_cols_to_profile]
+    profile.append(f"  - Names: {', '.join(cols_to_profile)}")
+    if len(df.columns) > max_cols_to_profile:
+         profile.append(f"  - ...(truncated, total {len(df.columns)} columns)")
+
+    profile.append("Data Types:")
+    dtypes_str = ', '.join([f'{col}:{dtype}' for col, dtype in df.dtypes[cols_to_profile].items()])
+    profile.append(f"  - {dtypes_str}")
+
+    profile.append("Null/Missing Values (Count per column):")
+    try:
+        null_counts = df.isnull().sum()
+        # Only show columns with missing values, up to a limit
+        missing_cols = null_counts[null_counts > 0]
+        if not missing_cols.empty:
+            missing_limit = 20
+            missing_str = ', '.join([f'{col}:{count}' for col, count in missing_cols.items()][:missing_limit])
+            profile.append(f"  - {missing_str}")
+            if len(missing_cols) > missing_limit:
+                 profile.append(f"  - ...(truncated, total {len(missing_cols)} columns with nulls)")
+        else:
+             profile.append("  - None found")
+    except Exception as e:
+         logger.warning(f"Could not compute null counts: {e}")
+         profile.append("  - Error calculating null counts.")
+
+    profile.append("Sample Rows (first 3):")
+    try:
+        # Convert head to string, handle potential formatting issues
+        sample_str = df.head(3).to_string(index=False) 
+        # Indent sample rows for clarity
+        indented_sample = "\n".join([f"  {line}" for line in sample_str.split('\n')])
+        profile.append(indented_sample)
+    except Exception as e:
+         logger.warning(f"Could not generate sample rows string: {e}")
+         profile.append("  Error generating sample rows.")
+
+    return "\n".join(profile)
 
 # --- New Visual Extraction Function ---
 def extract_pdf_visuals(file_path: str) -> List[Dict[str, Any]]:
@@ -164,16 +217,14 @@ def extract_text_from_txt(file_path: str) -> Dict[str, Any]:
     return {"text": text.strip()}
 
 def extract_text_from_csv(file_path: str) -> Dict[str, Any]:
-    """Extracts text content from a CSV file using pandas."""
-    logger.debug(f"Starting CSV extraction for: {file_path}")
-    text = ""
+    """Extracts a profile and sample from a CSV file using pandas."""
+    logger.debug(f"Starting CSV profiling for: {file_path}")
     try:
         # Try reading with common parameters, add error handling
         try:
             df = pd.read_csv(file_path)
         except pd.errors.ParserError as pe:
             logger.warning(f"Pandas ParserError for '{file_path}': {pe}. Trying different settings.")
-            # Example: Try skipping bad lines, different delimiter, etc.
             try:
                 df = pd.read_csv(file_path, on_bad_lines='skip')
             except Exception as fallback_err:
@@ -183,13 +234,14 @@ def extract_text_from_csv(file_path: str) -> Dict[str, Any]:
             logger.error(f"Error reading CSV '{file_path}' with pandas: {read_err}", exc_info=True)
             return {"text": "", "error": str(read_err)}
 
-        # Convert DataFrame to string (might be long)
-        text = df.to_string()
-        logger.debug(f"Finished CSV extraction for '{os.path.basename(file_path)}'. Length: {len(text)}")
+        # Generate profile text
+        profile_text = _create_profile_text(df)
+        logger.debug(f"Finished CSV profiling for '{os.path.basename(file_path)}'. Profile length: {len(profile_text)}")
+        return {"text": profile_text}
+
     except Exception as e:
-        logger.error(f"Error extracting text from CSV '{file_path}': {e}", exc_info=True)
-        return {"text": text, "error": str(e)}
-    return {"text": text.strip()}
+        logger.error(f"Error profiling CSV '{file_path}': {e}\n{traceback.format_exc()}") # Log full traceback
+        return {"text": "", "error": f"Error profiling CSV: {e}"}
 
 def extract_text_from_json(file_path: str) -> Dict[str, Any]:
     """Extracts text content from a JSON file by pretty-printing."""
@@ -208,8 +260,34 @@ def extract_text_from_json(file_path: str) -> Dict[str, Any]:
         return {"text": text, "error": str(e)}
     return {"text": text.strip()}
 
-# --- Main Extraction Dispatcher (No changes needed here) ---
+# --- NEW: Add Excel Extractor --- 
+def extract_text_from_xlsx(file_path: str) -> Dict[str, Any]:
+    """Extracts a profile and sample from each sheet of an Excel file."""
+    logger.debug(f"Starting Excel profiling for: {file_path}")
+    combined_profiles = []
+    try:
+        # Read all sheets
+        excel_data = pd.read_excel(file_path, sheet_name=None) # Returns dict {sheet_name: df}
+        if not excel_data:
+            logger.warning(f"No sheets found in Excel file: {file_path}")
+            return {"text": "", "error": "No sheets found in file"}
+        
+        logger.info(f"Found {len(excel_data)} sheets in '{os.path.basename(file_path)}': {list(excel_data.keys())}")
+        # Generate profile for each sheet
+        for sheet_name, df in excel_data.items():
+            logger.debug(f"Profiling sheet: '{sheet_name}'")
+            sheet_profile = _create_profile_text(df, sheet_name)
+            combined_profiles.append(sheet_profile)
+        
+        final_profile_text = "\n\n---\n\n".join(combined_profiles) # Join profiles with separator
+        logger.debug(f"Finished Excel profiling for '{os.path.basename(file_path)}'. Total profile length: {len(final_profile_text)}")
+        return {"text": final_profile_text}
 
+    except Exception as e:
+        logger.error(f"Error profiling Excel file '{file_path}': {e}\n{traceback.format_exc()}")
+        return {"text": "", "error": f"Error profiling Excel file: {e}"}
+
+# --- Main Extraction Dispatcher (Modified) ---
 def extract_text(file_path: str, file_type: str) -> Dict[str, Any]:
     """Main extraction dispatcher based on file type."""
     logger.info(f"Dispatching extractor for file type '{file_type}' on file: {os.path.basename(file_path)}")
@@ -218,11 +296,12 @@ def extract_text(file_path: str, file_type: str) -> Dict[str, Any]:
         'pdf': extract_text_from_pdf,
         'docx': extract_text_from_docx,
         'text': extract_text_from_txt, # Handles .txt, .md
-        'csv': extract_text_from_csv,
+        'csv': extract_text_from_csv, # Uses new profiling function
         'json': extract_text_from_json,
+        'xlsx': extract_text_from_xlsx, # ADDED mapping
+        # 'xls': extract_text_from_xlsx, # Optional: Map older .xls if needed
         # --- Add mappings for other types here --- #
         # 'pptx': extract_text_from_pptx,
-        # 'xlsx': extract_text_from_xlsx,
         # 'html': extract_text_from_html,
     }
 
@@ -231,8 +310,12 @@ def extract_text(file_path: str, file_type: str) -> Dict[str, Any]:
     if extractor_func:
         try:
             result = extractor_func(file_path)
-            if "error" in result:
+            # Log error here if extractor reported it
+            if result.get("error"):
                  logger.warning(f"Extractor '{extractor_func.__name__}' reported error for '{file_path}': {result['error']}")
+            # Ensure a 'text' key exists, even if empty on error
+            if "text" not in result:
+                 result["text"] = ""
             return result
         except Exception as e:
              # Catch unexpected errors within the specific extractor call itself

@@ -109,7 +109,10 @@ def process_file(file_path: str, vector_store: BaseVectorStore) -> Dict[str, Any
                     # It needs to return the count of chunks added.
                     # We pass standard metadata here.
                     chunk_metadata = {'source': filename}
-                    # Assuming embed_and_index_chunks returns a dict like {'status': '...', 'chunk_count': ...}
+                    # ADDED: Inject content_type for tabular profiles
+                    if file_type in ['csv', 'xlsx', 'xls']:
+                        chunk_metadata['content_type'] = 'tabular_profile'
+                        
                     indexing_result = embed_and_index_chunks(extracted_content, vector_store, chunk_metadata)
                     added_count = indexing_result.get('chunk_count', 0) # Extract the count, default to 0
                     total_chunks_added += added_count

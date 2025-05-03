@@ -227,10 +227,8 @@ async def ask_question_qa(request: QuestionRequest):
                 logger.warning(f"[Q&A] No relevant chunks found for query: '{request.question}'")
                 return AnswerResponse(answer="Sorry, I couldn't find relevant information in the uploaded documents.", sources=[])
 
-            context = "\n---\n".join([chunk.get('content', '') for chunk in relevant_chunks])
-            logger.debug(f"[Q&A] Generating answer using context (approx {len(context)} chars)...")
             with Timer(logger, name="[Q&A] Answer generation"):
-                answer_text = generate_answer(request.question, context)
+                answer_text = generate_answer(request.question, relevant_chunks)
             logger.info(f"[Q&A] Generated answer (snippet): '{answer_text[:100]}...'")
 
             # Format sources nicely, including visual element info

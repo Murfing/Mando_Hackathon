@@ -15,9 +15,9 @@ pdfplumber
 
 # Indexing & Embedding - Choose one vector store
 # sentence-transformers # No longer needed
-faiss-cpu 
+faiss-cpu
 numpy # Required by FAISS and vector_store.py logic
-# or chromadb 
+# or chromadb
 
 # QA & Multimodal
 google-generativeai
@@ -39,4 +39,4 @@ mistralai # If MindPalace uses Mistral
 # Add any other specific dependencies from MindPalace's requirements.txt
 
 # Testing
-# pytest 
+# pytest
