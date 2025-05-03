@@ -12,6 +12,7 @@ openpyxl
 pandas
 Pillow
 pdfplumber
+multipart
 
 # Indexing & Embedding - Choose one vector store
 # sentence-transformers # No longer needed
