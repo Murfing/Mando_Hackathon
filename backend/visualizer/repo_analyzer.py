@@ -273,7 +273,8 @@ def analyze_github_repo(repo_url: str, logger_instance: Optional[logging.Logger]
         effective_logger.info(f"Finished analysis for repo URL: {repo_url}")
         return {
             "explanation": explanation.strip(),
-            "mindmap_markdown": mermaid_code
+            "mindmap_markdown": mermaid_code,
+            "repo_structure_text": repo_structure
         }
 
     except (ValueError, ConnectionError, RuntimeError, TimeoutError) as e:

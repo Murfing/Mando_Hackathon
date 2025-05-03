@@ -1,7 +1,7 @@
 import logging
 import os
 import shutil
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
@@ -122,7 +122,11 @@ class AnalyzeRepoRequest(BaseModel):
 
 class VisualizationResponse(BaseModel):
     explanation: str
-    mindmap_markdown: str
+    mindmap_markdown: Optional[str] = None
+    repo_structure_text: Optional[str] = None
+
+class QueryRequest(BaseModel):
+    question: str
 
 # --- Exception Handling ---
 @app.exception_handler(Exception)
@@ -229,16 +233,30 @@ async def ask_question_qa(request: QuestionRequest):
                 answer_text = generate_answer(request.question, context)
             logger.info(f"[Q&A] Generated answer (snippet): '{answer_text[:100]}...'")
 
-            # Format sources nicely
-            sources = [
-                {
-                    "source": chunk.get('metadata', {}).get('source', 'Unknown'),
-                    "content_snippet": chunk.get('content', '')[:150] + "...", # Keep snippet concise
+            # Format sources nicely, including visual element info
+            sources = []
+            for chunk in relevant_chunks:
+                metadata = chunk.get('metadata', {})
+                source_type = metadata.get('source_type') # Check if it's a visual summary
+                original_source = metadata.get('original_source', metadata.get('source', 'Unknown')) # Use original if available
+                page_number = metadata.get('page_number')
+
+                # Use summary as snippet for visual elements, content for text chunks
+                content_snippet = metadata.get('summary', chunk.get('content', ''))[:150] + "..."
+
+                source_entry = {
+                    "source": original_source, # Always show the original document name
+                    "content_snippet": content_snippet,
                     "score": chunk.get('score', None),
-                    "metadata": chunk.get('metadata', {}) # Include all metadata
+                    "metadata": { # Pass specific metadata needed by frontend
+                        "original_source": original_source,
+                        "source_type": source_type, # 'image', 'table', or None
+                        "page_number": page_number, # Page number if available
+                        "chunk_index": metadata.get('chunk_index') # Chunk index for standard text
+                    }
                 }
-                for chunk in relevant_chunks
-            ]
+                sources.append(source_entry)
+
             logger.debug(f"[Q&A] Formatted {len(sources)} sources for response.")
 
             return AnswerResponse(answer=answer_text, sources=sources)

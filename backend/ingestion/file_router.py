@@ -1,16 +1,19 @@
 import os
 import logging
 from typing import Dict, Any
+import io # ADDED for BytesIO
+from PIL import Image # ADDED for reading image bytes
 
 # Get the logger instance from the root logger configured in app.py
 logger = logging.getLogger(__name__)
 
 # Placeholder imports - replace with actual implementations
-from .extractor import extract_text
-from .ocr_handler import handle_ocr
+from .extractor import extract_text, extract_pdf_visuals
+from .multimodal_processor import generate_summary_for_element
 from .crawler import crawl_links
-from ..indexing.embedder import embed_and_index_chunks # Assuming this function handles chunking, embedding, and indexing
+from ..indexing.embedder import embed_and_index_chunks, get_embeddings
 from ..utils.helpers import Timer
+from ..indexing.vector_store import BaseVectorStore
 
 SUPPORTED_EXTENSIONS = {
     '.pdf': 'pdf',
@@ -31,10 +34,12 @@ SUPPORTED_EXTENSIONS = {
     # Add more as needed
 }
 
-def process_file(file_path: str, vector_store: Any) -> Dict[str, Any]:
+def process_file(file_path: str, vector_store: BaseVectorStore) -> Dict[str, Any]:
     """
-    Routes the file to the appropriate processing module based on its extension.
-    Orchestrates extraction, OCR (if needed), chunking, embedding, and indexing.
+    Routes the file for processing.
+    - Extracts standard text and indexes it.
+    - For PDFs, extracts images/tables, gets summaries via Gemini, and indexes summaries.
+    - For Images, gets summary via Gemini and indexes it.
 
     Args:
         file_path: Path to the file to process.
@@ -46,99 +51,154 @@ def process_file(file_path: str, vector_store: Any) -> Dict[str, Any]:
     _, file_extension = os.path.splitext(file_path)
     file_type = SUPPORTED_EXTENSIONS.get(file_extension.lower())
     filename = os.path.basename(file_path)
+    total_chunks_added = 0
+    visual_elements_processed = 0
+    visual_elements_failed = 0
 
     logger.info(f"Processing file: '{filename}' (Detected type: {file_type})")
 
-    extracted_content = None
-    needs_ocr = False
     result_metadata = {"filename": filename, "file_type": file_type}
 
     if not file_type:
         logger.warning(f"Unsupported file type '{file_extension}' for file '{filename}'. Skipping.")
-        return {"status": "skipped", "reason": f"Unsupported file type: {file_extension}"}
+        return {"status": "skipped", "reason": f"Unsupported file type: {file_extension}", **result_metadata}
 
     try:
-        # 1. Extraction
-        logger.debug(f"Attempting extraction for '{filename}' (type: {file_type}).")
-        with Timer(logger, name=f"Extraction for {filename}"):
-            if file_type in ['pdf', 'docx', 'pptx', 'xlsx', 'csv', 'json', 'text', 'html']:
+        extracted_content = None
+        extraction_error = None
+
+        # 1. Standard Text Extraction (for relevant types)
+        if file_type in ['pdf', 'docx', 'csv', 'json', 'text', 'html']: # Exclude image type here
+            logger.debug(f"Attempting standard text extraction for '{filename}' (type: {file_type}).")
+            with Timer(logger, name=f"Standard text extraction for {filename}"):
                 extracted_data = extract_text(file_path, file_type)
                 extracted_content = extracted_data.get("text", "")
-                needs_ocr = extracted_data.get("needs_ocr", False)
+                extraction_error = extracted_data.get("error")
                 char_count = len(extracted_content) if extracted_content else 0
-                logger.info(f"Extraction complete for '{filename}'. Chars: {char_count}, Needs OCR: {needs_ocr}")
-                # TODO: Handle extracted tables, images separately if needed
+                if extraction_error:
+                    logger.warning(f"Standard extraction failed for '{filename}': {extraction_error}")
+                else:
+                    logger.info(f"Standard extraction complete for '{filename}'. Chars: {char_count}")
 
-            elif file_type == 'image':
-                needs_ocr = True # Images always need OCR
-                logger.info(f"File '{filename}' identified as image, requires OCR.")
-            else:
-                 # This case should not be reached due to the initial check, but good practice
-                 logger.error(f"No extractor available for file type: {file_type} ('{filename}'). This should not happen.")
-                 return {"status": "skipped", "reason": f"Internal error: No extractor for supported type {file_type}"}
+            # --- NEW 1.5: Optional Link Crawling ---
+            ENABLE_LINK_CRAWLING = True # Set to False or getenv to disable
+            crawled_content = "" # Initialize
+            if ENABLE_LINK_CRAWLING and extracted_content and file_type in ['pdf', 'text', 'docx']: # Add other types like html if needed
+                logger.info(f"Attempting link crawling within content of '{filename}'...")
+                with Timer(logger, name=f"Link crawling for {filename}"):
+                    try:
+                        # Assuming crawl_links takes the text and returns crawled text
+                        crawled_content = crawl_links(extracted_content)
+                    except Exception as crawl_err:
+                        logger.error(f"Link crawling failed for '{filename}': {crawl_err}", exc_info=True)
+                        # Don't stop processing, just log the error
 
-        # 2. OCR (if needed)
-        if needs_ocr:
-            logger.info(f"Performing OCR on: '{filename}'")
-            with Timer(logger, name=f"OCR for {filename}"):
-                ocr_text = handle_ocr(file_path, file_type) # Pass file_type for context
-            ocr_char_count = len(ocr_text) if ocr_text else 0
-            logger.info(f"OCR complete for '{filename}'. Added Chars: {ocr_char_count}")
-            # Combine OCR text with any previously extracted text (e.g., from PDF metadata)
-            if extracted_content and ocr_text:
-                extracted_content = extracted_content + "\n\n--- OCR Text ---\n\n" + ocr_text
-            elif ocr_text:
-                extracted_content = ocr_text
-            else:
-                 logger.warning(f"OCR was flagged for '{filename}' but returned no text.")
-                 # Content might still exist from initial extraction, proceed if so
+                if crawled_content:
+                    logger.info(f"Adding {len(crawled_content)} chars from crawled links for '{filename}'.")
+                    # Append crawled content to the original extracted content
+                    extracted_content += "\n\n--- Crawled Link Content ---\n\n" + crawled_content
+                else:
+                    logger.info(f"No content retrieved from link crawling for '{filename}'.")
+            # --- END Link Crawling ---
 
-        if not extracted_content or not extracted_content.strip():
-             logger.warning(f"No content could be extracted or generated via OCR from '{filename}'. Skipping indexing.")
-             return {"status": "skipped", "reason": "No content extracted", **result_metadata}
+            # 2. Index Standard Text Chunks (if content exists)
+            if extracted_content and extracted_content.strip():
+                logger.info(f"Indexing standard text content for '{filename}'")
+                with Timer(logger, name=f"Standard text indexing for {filename}"):
+                    # Assuming embed_and_index_chunks handles chunking, embedding, and adding to store
+                    # It needs to return the count of chunks added.
+                    # We pass standard metadata here.
+                    chunk_metadata = {'source': filename}
+                    # Assuming embed_and_index_chunks returns a dict like {'status': '...', 'chunk_count': ...}
+                    indexing_result = embed_and_index_chunks(extracted_content, vector_store, chunk_metadata)
+                    added_count = indexing_result.get('chunk_count', 0) # Extract the count, default to 0
+                    total_chunks_added += added_count
+                    logger.info(f"Indexed {added_count} standard text chunks for '{filename}'.")
+            elif not extraction_error:
+                logger.info(f"No standard text content extracted from '{filename}'. Skipping text indexing.")
 
-        # 3. Link Crawling (Optional)
-        # Be cautious enabling this - can significantly increase processing time and complexity.
-        should_crawl = False # Set to True to enable
-        if should_crawl and file_type in ['text', 'html', 'pdf']: # Only crawl links in text-based formats
-            logger.info(f"Attempting link crawling within content of '{filename}'")
-            with Timer(logger, name=f"Crawling links in {filename}"):
-                crawled_content = crawl_links(extracted_content)
-            if crawled_content:
-                logger.info(f"Adding {len(crawled_content)} chars from crawled links for '{filename}'")
-                extracted_content += "\n\n--- Crawled Content ---\n\n" + crawled_content
+        # 3. Visual Element Processing (PDFs and Images)
+        visual_elements_to_process = []
+        if file_type == 'pdf':
+            logger.info(f"Extracting visual elements (images/tables) from PDF: '{filename}'")
+            with Timer(logger, name=f"Visual element extraction for {filename}"):
+                visual_elements_to_process = extract_pdf_visuals(file_path)
+        elif file_type == 'image':
+            logger.info(f"Preparing standalone image for processing: '{filename}'")
+            try:
+                with open(file_path, "rb") as f:
+                    image_bytes = f.read()
+                if image_bytes:
+                    visual_elements_to_process = [{
+                        'type': 'image',
+                        'data': image_bytes,
+                        'page_number': None,
+                        'original_source': filename
+                    }]
+                else:
+                    logger.warning(f"Could not read bytes from image file: '{filename}'")
+            except Exception as img_read_err:
+                logger.error(f"Error reading image file '{filename}': {img_read_err}", exc_info=True)
 
-        # 4. Chunking, Embedding & Indexing
-        logger.info(f"Starting indexing process for content from: '{filename}'")
-        if vector_store is None:
-             # This check is also in app.py, but good to have defence in depth
-             logger.error("Vector store not available during processing of '{filename}'. Skipping indexing.")
-             return {"status": "processed_no_index", "reason": "Vector store not available", **result_metadata}
+        # 4. Summarize and Index Visual Elements
+        if visual_elements_to_process:
+            logger.info(f"Processing {len(visual_elements_to_process)} visual elements for '{filename}'...")
+            for element in visual_elements_to_process:
+                with Timer(logger, name=f"Gemini summary for {element.get('type')} element ({filename} Pg:{element.get('page_number')})"):
+                    summary = generate_summary_for_element(element)
 
-        # Metadata for chunks
-        # Ensure metadata is serializable if needed by the vector store
-        base_metadata = {"source": filename, "original_path": file_path, "file_type": file_type}
+                if summary:
+                    visual_elements_processed += 1
+                    # Embed and index the summary
+                    try:
+                        logger.debug(f"Embedding summary for visual element: {element['original_source']} ({element['type']}) Page: {element.get('page_number')}")
+                        # Ensure embedding is a list of floats
+                        embedding_list = get_embeddings([summary])[0]
+                        if not isinstance(embedding_list, list):
+                            embedding_list = embedding_list.tolist() # Convert numpy array if necessary
 
-        # This function should handle chunking, embedding, and adding to the store
-        with Timer(logger, name=f"Embedding and Indexing for {filename}"):
-             indexing_result = embed_and_index_chunks(extracted_content, vector_store, base_metadata)
+                        # Prepare metadata for the visual element's summary
+                        metadata = {
+                            'summary': summary, # Store the summary itself in metadata for potential display
+                            'source_type': element['type'], # 'image' or 'table'
+                            'original_source': element['original_source'],
+                            'page_number': element.get('page_number') # Can be None for standalone images
+                        }
+                        
+                        # Generate a unique ID for this visual summary chunk
+                        unique_id = f"{element['original_source']}__{element['type']}__{element.get('page_number', 'None')}__summary"
+                        
+                        # Use add_documents with single-item lists
+                        vector_store.add_documents(
+                            texts=[summary], 
+                            embeddings=[embedding_list], 
+                            metadatas=[metadata], # Pass the prepared metadata dict within a list
+                            ids=[unique_id]
+                        )
+                        total_chunks_added += 1 # Count each summary as one 'chunk'
+                        logger.debug(f"Indexed summary for visual element: {metadata['original_source']} ({metadata['source_type']}) Page: {metadata.get('page_number')}")
+                    except Exception as index_err:
+                        visual_elements_failed += 1
+                        logger.error(f"Failed to embed or index summary for visual element ({element['original_source']} - {element['type']}): {index_err}", exc_info=True)
+                else:
+                    visual_elements_failed += 1
+                    logger.warning(f"Failed to generate summary for visual element ({element['original_source']} - {element['type']}). Skipping indexing.")
+            logger.info(f"Finished processing visual elements for '{filename}'. Processed: {visual_elements_processed}, Failed: {visual_elements_failed}")
 
-        chunk_count = indexing_result.get("chunk_count", 0)
-        if chunk_count > 0:
-            logger.info(f"Successfully indexed {chunk_count} chunks for: '{filename}'")
-            final_status = "indexed"
-        else:
-            logger.warning(f"Indexing process completed but added 0 chunks for: '{filename}'. Result: {indexing_result}")
-            final_status = indexing_result.get("status", "indexing_failed") # Use status from embedder if available
-        
-        # Merge results
-        result_metadata.update(indexing_result)
-        result_metadata["status"] = final_status
-        return result_metadata
+        # 5. Final Status Check
+        if total_chunks_added == 0 and not extraction_error:
+            # If standard extraction didn't fail but no text or visual summaries were indexed
+            logger.warning(f"Completed processing for '{filename}', but no content was indexed (standard text or visual summaries). Check file content and Gemini processing logs.")
+            return {"status": "skipped", "reason": "No content indexed", **result_metadata, "chunks_added": 0}
+        elif extraction_error and total_chunks_added == 0:
+            # If standard extraction failed AND no visual summaries were indexed
+            logger.error(f"Processing failed entirely for '{filename}'. Extraction Error: {extraction_error}. No visual content indexed.")
+            return {"status": "failed", "reason": f"Extraction failed: {extraction_error}", **result_metadata, "chunks_added": 0}
+
+        # If *any* content was indexed (standard text or visual summaries)
+        logger.info(f"Successfully finished processing '{filename}'. Total items indexed: {total_chunks_added}")
+        return {"status": "processed", "chunks_added": total_chunks_added, **result_metadata}
 
     except Exception as e:
-        logger.error(f"Unhandled exception during processing of file '{filename}': {e}", exc_info=True)
-        # Ensure a consistent return format on failure
-        result_metadata["status"] = "failed"
-        result_metadata["error"] = str(e)
-        return result_metadata 
+        logger.error(f"Unhandled error during processing of file '{filename}': {e}", exc_info=True)
+        return {"status": "failed", "reason": f"Unhandled processing error: {e}", **result_metadata, "chunks_added": total_chunks_added} 

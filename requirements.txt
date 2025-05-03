@@ -2,16 +2,16 @@ fastapi
 uvicorn[standard]
 pydantic
 python-dotenv
+python-multipart
 
 # Ingestion - Choose based on needs
 pymupdf
-pdfplumber
 python-docx
 python-pptx
 openpyxl
 pandas
-pytesseract 
-python-multipart
+Pillow
+pdfplumber
 
 # Indexing & Embedding - Choose one vector store
 # sentence-transformers # No longer needed
@@ -19,8 +19,8 @@ faiss-cpu
 numpy # Required by FAISS and vector_store.py logic
 # or chromadb 
 
-# QA
-google-generativeai 
+# QA & Multimodal
+google-generativeai
 
 # Frontend (If building with Python for templates, e.g., Jinja2)
 # jinja2
@@ -29,13 +29,14 @@ google-generativeai
 requests # For GitHub scraping / URL fetching
 beautifulsoup4 # For HTML parsing (if scraper needs it)
 mistralai # If MindPalace uses Mistral
-streamlit-mermaid # For MindPalace mindmap generation (maybe client side? check usage)
-langchain
-langchain-core
-langchain-google-genai
-langchain-community
-
-
+# Langchain potentially unused, keep commented for now
+# langchain
+# langchain-core
+# langchain-google-genai
+# langchain-community
+# faiss-cpu is already listed above
+# Add any specific mindmap generation libraries if needed server-side
+# Add any other specific dependencies from MindPalace's requirements.txt
 
 # Testing
 # pytest 

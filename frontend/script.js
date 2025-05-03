@@ -39,6 +39,8 @@ const visualizerOutputCard = document.querySelector('.visualizer-output-card');
 const visualizerMindmapContainer = document.getElementById('visualizer-mindmap-container');
 const visualizerExplanationDiv = document.getElementById('visualizer-explanation');
 const visualizerMindmapDiv = document.getElementById('visualizer-mindmap');
+const visualizerStructureContainer = document.getElementById('visualizer-structure-container');
+const visualizerStructureText = document.getElementById('visualizer-structure-text');
 
 // --- Helper Functions ---
 function showStatus(element, message, type = 'loading') {
@@ -250,16 +252,36 @@ if(queryForm) {
                 result.sources.forEach(source => {
                     const li = document.createElement('li');
                     const sourceInfo = document.createElement('strong');
-                    sourceInfo.textContent = `Source: ${source.metadata?.source || 'Unknown'}`;
-                    if (source.metadata?.chunk_index !== undefined) {
-                        sourceInfo.textContent += ` (Chunk ${source.metadata.chunk_index})`;
+                    
+                    // UPDATED: Format source text based on metadata
+                    let sourcePrefix = "Source: ";
+                    const sourceType = source.metadata?.source_type;
+                    const originalSource = source.metadata?.original_source || 'Unknown';
+                    const pageNumber = source.metadata?.page_number;
+                    const chunkIndex = source.metadata?.chunk_index;
+
+                    if (sourceType === 'image') {
+                        sourcePrefix = "Image from: ";
+                    } else if (sourceType === 'table') {
+                        sourcePrefix = "Table from: ";
                     }
+
+                    sourceInfo.textContent = `${sourcePrefix}${originalSource}`;
+                    if (pageNumber !== undefined && pageNumber !== null) {
+                        sourceInfo.textContent += ` (Page ${pageNumber})`; // Assume page_number is already 1-based from backend
+                    } else if (chunkIndex !== undefined && chunkIndex !== null) {
+                         // Show chunk index only if it's not a visual element with a page number
+                         sourceInfo.textContent += ` (Chunk ${chunkIndex})`;
+                    }
+                    // END UPDATED Formatting
+                    
                     if (source.score !== undefined && source.score !== null) {
                         sourceInfo.textContent += ` | Score: ${source.score.toFixed(4)}`;
                     }
                     li.appendChild(sourceInfo);
                     const snippet = document.createElement('blockquote');
-                    snippet.textContent = `"${source.content_snippet}"`;
+                    // Display the content_snippet which could be text or summary
+                    snippet.textContent = `"${source.content_snippet || 'No snippet available'}"`;
                     li.appendChild(snippet);
                     sourcesListUl.appendChild(li);
                 });
@@ -338,7 +360,7 @@ if (githubUrlInput && pdfVisualInput) {
 }
 
 // Visualizer: Form Submission
-if (visualizerForm && githubUrlInput && pdfVisualInput && visualizerStatusDiv && visualizerOutputCard && visualizerMindmapContainer && visualizerExplanationDiv && visualizerMindmapDiv) {
+if (visualizerForm && githubUrlInput && pdfVisualInput && visualizerStatusDiv && visualizerOutputCard && visualizerMindmapContainer && visualizerExplanationDiv && visualizerMindmapDiv && visualizerStructureContainer && visualizerStructureText) {
     visualizerForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
@@ -358,8 +380,10 @@ if (visualizerForm && githubUrlInput && pdfVisualInput && visualizerStatusDiv &&
         disableForm(visualizerForm, true);
         visualizerOutputCard.classList.add('hidden');
         visualizerMindmapContainer.classList.add('hidden');
+        visualizerStructureContainer.classList.add('hidden');
         visualizerExplanationDiv.innerHTML = '';
-        visualizerMindmapDiv.innerHTML = ''; // Clear previous content
+        visualizerMindmapDiv.innerHTML = '';
+        visualizerStructureText.textContent = '';
 
         let endpoint = '';
         let body = null;
@@ -395,7 +419,16 @@ if (visualizerForm && githubUrlInput && pdfVisualInput && visualizerStatusDiv &&
             hideStatus(visualizerStatusDiv);
 
             visualizerExplanationDiv.textContent = result.explanation || 'No explanation provided.';
-            visualizerMindmapDiv.innerHTML = ''; // Clear previous content
+            visualizerOutputCard.classList.remove('hidden');
+
+            if (result.repo_structure_text) {
+                 visualizerStructureText.textContent = result.repo_structure_text;
+                 visualizerStructureContainer.classList.remove('hidden');
+            } else {
+                 visualizerStructureContainer.classList.add('hidden');
+            }
+
+            visualizerMindmapDiv.innerHTML = '';
             const mermaidCode = result.mindmap_markdown;
 
             if (mermaidCode && typeof mermaid !== 'undefined') {
@@ -448,16 +481,21 @@ if (visualizerForm && githubUrlInput && pdfVisualInput && visualizerStatusDiv &&
                 visualizerMindmapDiv.textContent = 'No flowchart data available or Mermaid library not loaded.';
                 if (typeof mermaid === 'undefined') console.error("Mermaid library (mermaid) not found!");
                 if (!mermaidCode) console.log("No Mermaid code string received from backend.");
+                visualizerMindmapContainer.classList.add('hidden');
             }
 
-            visualizerOutputCard.classList.remove('hidden');
-            visualizerMindmapContainer.classList.remove('hidden');
+            // Only remove hidden from mindmap container if there *is* content to show
+            if (visualizerMindmapDiv.innerHTML || visualizerMindmapDiv.textContent !== 'No flowchart data available or Mermaid library not loaded.') {
+                visualizerMindmapContainer.classList.remove('hidden');
+            }
 
         } catch (error) {
             console.error('Visualizer Fetch/Processing Error:', error);
             showStatus(visualizerStatusDiv, `Visualization failed: ${error.message}`, 'error');
             visualizerOutputCard.classList.add('hidden');
             visualizerMindmapContainer.classList.add('hidden');
+            visualizerStructureContainer.classList.add('hidden');
+            visualizerStructureText.textContent = '';
         } finally {
             disableForm(visualizerForm, false);
         }

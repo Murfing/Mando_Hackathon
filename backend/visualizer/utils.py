@@ -26,7 +26,7 @@ def _configure_gemini(gemini_api_key: str | None, current_logger: Optional[loggi
         raise RuntimeError(f"Gemini configuration failed: {e}") from e
 
 def call_gemini_json(prompt_text: str, system_instruction: str, gemini_api_key: str | None, 
-                     current_logger: Optional[logging.Logger] = None, model_name="gemini-1.5-flash") -> Optional[Dict[str, Any]]:
+                     current_logger: Optional[logging.Logger] = None, model_name="gemini-2.0-flash") -> Optional[Dict[str, Any]]:
     """Calls the Gemini API, expecting a JSON response."""
     effective_logger = current_logger if current_logger else logging.getLogger(__name__)
 

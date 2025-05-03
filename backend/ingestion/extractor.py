@@ -4,60 +4,120 @@ import pandas as pd
 import json
 import logging
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
+import pdfplumber # ADDED
 
 # Get the logger instance
 logger = logging.getLogger(__name__)
 
 # TODO: Add support for pptx (python-pptx), xlsx (openpyxl), html (BeautifulSoup)
 
+# --- New Visual Extraction Function ---
+def extract_pdf_visuals(file_path: str) -> List[Dict[str, Any]]:
+    """Extracts images and tables from a PDF file."""
+    visual_elements = []
+    filename = os.path.basename(file_path)
+    logger.info(f"Starting visual element extraction for: {filename}")
+
+    # Extract Images using PyMuPDF
+    try:
+        doc = fitz.open(file_path)
+        logger.debug(f"Processing {len(doc)} pages for images.")
+        for page_num in range(len(doc)):
+            try:
+                page = doc.load_page(page_num)
+                img_list = page.get_images(full=True)
+                for img_index, img_info in enumerate(img_list):
+                    xref = img_info[0]
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+                    # Basic filtering (optional): skip very small images
+                    if len(image_bytes) < 2048: # e.g., skip images smaller than 2KB
+                        # logger.debug(f"Skipping small image {img_index+1} on page {page_num+1}")
+                        continue
+
+                    visual_elements.append({
+                        'type': 'image',
+                        'data': image_bytes,
+                        'page_number': page_num + 1, # 1-based page number
+                        'original_source': filename
+                    })
+                    # logger.debug(f"Extracted image {img_index+1} (xref: {xref}, ext: {image_ext}) from page {page_num+1}")
+            except Exception as page_img_err:
+                 logger.error(f"Error extracting images from page {page_num + 1} of '{filename}': {page_img_err}", exc_info=True)
+        doc.close()
+        logger.info(f"Found {len([e for e in visual_elements if e['type'] == 'image'])} images in '{filename}' via PyMuPDF.")
+    except Exception as e:
+        logger.error(f"Error extracting images from PDF '{filename}' using PyMuPDF: {e}", exc_info=True)
+
+    # Extract Tables using pdfplumber
+    table_count = 0
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            logger.debug(f"Processing {len(pdf.pages)} pages for tables.")
+            for page_num, page in enumerate(pdf.pages):
+                try:
+                    tables = page.extract_tables()
+                    for table_index, table in enumerate(tables):
+                        if not table: # Skip empty tables
+                            continue
+                        # Convert table to Markdown for better LLM processing
+                        # Simple Markdown conversion - might need refinement for complex tables
+                        header = " | ".join(str(cell) if cell is not None else '' for cell in table[0])
+                        separator = " | ".join(["---"] * len(table[0]))
+                        body = "\n".join([" | ".join(str(cell) if cell is not None else '' for cell in row) for row in table[1:]])
+                        table_markdown = f"| {header} |\n| {separator} |\n{body}"
+
+                        visual_elements.append({
+                            'type': 'table',
+                            'data': table_markdown,
+                            'page_number': page_num + 1, # 1-based page number
+                            'original_source': filename
+                        })
+                        table_count += 1
+                        # logger.debug(f"Extracted table {table_index+1} from page {page_num+1}")
+                except Exception as page_table_err:
+                    logger.error(f"Error extracting tables from page {page_num + 1} of '{filename}': {page_table_err}", exc_info=True)
+        logger.info(f"Found {table_count} tables in '{filename}' via pdfplumber.")
+    except Exception as e:
+        logger.error(f"Error extracting tables from PDF '{filename}' using pdfplumber: {e}", exc_info=True)
+
+    logger.info(f"Finished visual element extraction for '{filename}'. Found {len(visual_elements)} total elements.")
+    return visual_elements
+
+# --- Existing Text Extraction Functions (Modified PDF one slightly) ---
+
 def extract_text_from_pdf(file_path: str) -> Dict[str, Any]:
-    """Extracts text from a PDF file. Checks if OCR might be needed."""
-    logger.debug(f"Starting PDF extraction for: {file_path}")
+    """Extracts text from a PDF file. (OCR logic removed, handled separately)"""
+    logger.debug(f"Starting standard PDF text extraction for: {file_path}")
     text = ""
-    needs_ocr = False
+    # needs_ocr = False # REMOVED - No longer used here
     try:
         doc = fitz.open(file_path)
         if not doc.is_pdf:
             logger.warning(f"File is not a valid PDF: {file_path}")
-            return {"text": "", "needs_ocr": False, "error": "Invalid PDF file"}
-            
+            return {"text": "", "error": "Invalid PDF file"}
+
         num_pages = len(doc)
         logger.debug(f"PDF has {num_pages} pages.")
         total_text_len = 0
-        image_pages = 0
+        # image_pages = 0 # REMOVED - Not needed for this check anymore
 
         for page_num in range(num_pages):
             page = doc.load_page(page_num)
             page_text = page.get_text().strip()
-            if not page_text:
-                 # Check more robustly if it contains images that might have text
-                 if page.get_images(full=True):
-                     logger.debug(f"Page {page_num + 1} has no text but contains images. Potential OCR needed.")
-                     image_pages += 1
-                 else:
-                     logger.debug(f"Page {page_num + 1} appears to be empty (no text, no images).")
-            else:
-                 total_text_len += len(page_text)
+            total_text_len += len(page_text)
             text += page_text + "\n" # Add newline between pages
         doc.close()
 
-        # Decide if OCR is needed
-        # If total text is very short compared to page count, or many pages had images but no text
-        if num_pages > 0 and (total_text_len < num_pages * 20 or image_pages > num_pages // 2):
-            logger.info(f"Low text content ({total_text_len} chars) or high image count ({image_pages}/{num_pages} pages) suggests OCR might be beneficial for '{os.path.basename(file_path)}'.")
-            needs_ocr = True
-        else:
-             logger.debug(f"Extracted {total_text_len} characters. OCR likely not needed.")
-             
+        logger.debug(f"Finished standard PDF text extraction for '{os.path.basename(file_path)}'. Length: {total_text_len}")
+
     except Exception as e:
-        logger.error(f"Error extracting text from PDF '{file_path}': {e}", exc_info=True)
-        # Decide if failure implies needing OCR
-        needs_ocr = True # Assume OCR might help if standard extraction fails
-        return {"text": text, "needs_ocr": needs_ocr, "error": str(e)}
-        
-    logger.debug(f"Finished PDF extraction for '{file_path}'. Length: {len(text)}, Needs OCR: {needs_ocr}")
-    return {"text": text.strip(), "needs_ocr": needs_ocr}
+        logger.error(f"Error extracting standard text from PDF '{file_path}': {e}", exc_info=True)
+        return {"text": text, "error": str(e)}
+
+    return {"text": text.strip()} # Return only text and potential error
 
 def extract_text_from_docx(file_path: str) -> Dict[str, Any]:
     """Extracts text from a DOCX file."""
@@ -65,68 +125,71 @@ def extract_text_from_docx(file_path: str) -> Dict[str, Any]:
     text = ""
     try:
         doc = Document(file_path)
-        num_paras = len(doc.paragraphs)
-        logger.debug(f"DOCX has {num_paras} paragraphs.")
-        for i, para in enumerate(doc.paragraphs):
+        for para in doc.paragraphs:
             text += para.text + "\n"
-        # TODO: Extract text from tables as well
-        # TODO: Extract text from headers/footers if needed
+        # TODO: Consider extracting text from tables within DOCX if needed
+        logger.debug(f"Finished DOCX extraction for '{os.path.basename(file_path)}'. Length: {len(text)}")
     except Exception as e:
         logger.error(f"Error extracting text from DOCX '{file_path}': {e}", exc_info=True)
-        return {"text": "", "needs_ocr": False, "error": str(e)}
-        
-    logger.debug(f"Finished DOCX extraction for '{file_path}'. Length: {len(text)}")
-    return {"text": text.strip(), "needs_ocr": False}
+        return {"text": text, "error": str(e)}
+    return {"text": text.strip()}
 
 def extract_text_from_txt(file_path: str) -> Dict[str, Any]:
-    """Extracts text from a TXT file."""
-    logger.debug(f"Starting TXT extraction for: {file_path}")
+    """Extracts text from a TXT or MD file."""
+    logger.debug(f"Starting TXT/MD extraction for: {file_path}")
     text = ""
     try:
         # Try common encodings
-        encodings_to_try = ['utf-8', 'latin-1', 'cp1252']
+        encodings_to_try = ['utf-8', 'latin-1', 'windows-1252']
         for enc in encodings_to_try:
             try:
                 with open(file_path, 'r', encoding=enc) as f:
                     text = f.read()
-                logger.debug(f"Successfully read TXT file with encoding: {enc}")
-                break # Stop if successful
+                logger.debug(f"Successfully read '{os.path.basename(file_path)}' with encoding '{enc}'. Length: {len(text)}")
+                break # Stop after successful read
             except UnicodeDecodeError:
-                logger.debug(f"Failed to decode TXT with {enc}, trying next...")
+                logger.debug(f"Failed to decode '{os.path.basename(file_path)}' with '{enc}'")
                 continue
-        else: # If loop finishes without break
-            raise ValueError(f"Could not decode TXT file with tried encodings: {encodings_to_try}")
+            except Exception as file_err:
+                # Catch other file reading errors for the specific encoding attempt
+                logger.warning(f"Could not read file '{file_path}' with encoding '{enc}': {file_err}")
+                continue # Try next encoding
+        else: # If loop completes without break
+            logger.error(f"Could not decode file '{file_path}' with any attempted encoding.")
+            return {"text": "", "error": "Could not decode file"}
 
-    except FileNotFoundError:
-         logger.error(f"TXT file not found: '{file_path}'")
-         return {"text": "", "needs_ocr": False, "error": "File not found"}
     except Exception as e:
-        logger.error(f"Error reading TXT file '{file_path}': {e}", exc_info=True)
-        return {"text": "", "needs_ocr": False, "error": str(e)}
-        
-    logger.debug(f"Finished TXT extraction for '{file_path}'. Length: {len(text)}")
-    return {"text": text.strip(), "needs_ocr": False}
+        logger.error(f"Error extracting text from TXT/MD '{file_path}': {e}", exc_info=True)
+        return {"text": text, "error": str(e)}
+    return {"text": text.strip()}
 
 def extract_text_from_csv(file_path: str) -> Dict[str, Any]:
-    """Extracts text content from a CSV file by concatenating rows."""
+    """Extracts text content from a CSV file using pandas."""
     logger.debug(f"Starting CSV extraction for: {file_path}")
     text = ""
     try:
-        # Attempt to detect encoding, falling back to utf-8
-        df = pd.read_csv(file_path, encoding_errors='ignore')
-        logger.debug(f"CSV read successfully. Shape: {df.shape}")
-        # Convert entire DataFrame to string, could be improved (e.g., row by row)
-        # Consider handling large CSVs more efficiently
-        text = df.to_string(index=False) # Avoid writing row index
-    except FileNotFoundError:
-         logger.error(f"CSV file not found: '{file_path}'")
-         return {"text": "", "needs_ocr": False, "error": "File not found"}
+        # Try reading with common parameters, add error handling
+        try:
+            df = pd.read_csv(file_path)
+        except pd.errors.ParserError as pe:
+            logger.warning(f"Pandas ParserError for '{file_path}': {pe}. Trying different settings.")
+            # Example: Try skipping bad lines, different delimiter, etc.
+            try:
+                df = pd.read_csv(file_path, on_bad_lines='skip')
+            except Exception as fallback_err:
+                 logger.error(f"Failed to parse CSV '{file_path}' even with fallback: {fallback_err}", exc_info=True)
+                 return {"text": "", "error": f"Failed to parse CSV: {fallback_err}"}
+        except Exception as read_err:
+            logger.error(f"Error reading CSV '{file_path}' with pandas: {read_err}", exc_info=True)
+            return {"text": "", "error": str(read_err)}
+
+        # Convert DataFrame to string (might be long)
+        text = df.to_string()
+        logger.debug(f"Finished CSV extraction for '{os.path.basename(file_path)}'. Length: {len(text)}")
     except Exception as e:
-        logger.error(f"Error reading CSV file '{file_path}': {e}", exc_info=True)
-        return {"text": "", "needs_ocr": False, "error": str(e)}
-        
-    logger.debug(f"Finished CSV extraction for '{file_path}'. Length: {len(text)}")
-    return {"text": text.strip(), "needs_ocr": False}
+        logger.error(f"Error extracting text from CSV '{file_path}': {e}", exc_info=True)
+        return {"text": text, "error": str(e)}
+    return {"text": text.strip()}
 
 def extract_text_from_json(file_path: str) -> Dict[str, Any]:
     """Extracts text content from a JSON file by pretty-printing."""
@@ -135,31 +198,22 @@ def extract_text_from_json(file_path: str) -> Dict[str, Any]:
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        # Convert JSON object to a string representation
-        # Consider alternative representations if structure is important (e.g., key-value pairs)
-        text = json.dumps(data, indent=2)
-    except FileNotFoundError:
-         logger.error(f"JSON file not found: '{file_path}'")
-         return {"text": "", "needs_ocr": False, "error": "File not found"}
-    except json.JSONDecodeError as e:
-         logger.error(f"Invalid JSON format in file '{file_path}': {e}")
-         return {"text": "", "needs_ocr": False, "error": f"Invalid JSON: {e}"}
+        text = json.dumps(data, indent=2) # Pretty print
+        logger.debug(f"Finished JSON extraction for '{os.path.basename(file_path)}'. Length: {len(text)}")
+    except json.JSONDecodeError as json_err:
+         logger.error(f"Invalid JSON file: '{file_path}': {json_err}", exc_info=False)
+         return {"text": "", "error": f"Invalid JSON format: {json_err}"}
     except Exception as e:
-        logger.error(f"Error reading JSON file '{file_path}': {e}", exc_info=True)
-        return {"text": "", "needs_ocr": False, "error": str(e)}
-        
-    logger.debug(f"Finished JSON extraction for '{file_path}'. Length: {len(text)}")
-    return {"text": text.strip(), "needs_ocr": False}
+        logger.error(f"Error extracting text from JSON '{file_path}': {e}", exc_info=True)
+        return {"text": text, "error": str(e)}
+    return {"text": text.strip()}
 
-# --- Add extractors for other types (pptx, xlsx, html) here ---
-# def extract_text_from_pptx(file_path: str) -> Dict[str, Any]: ...
-# def extract_text_from_xlsx(file_path: str) -> Dict[str, Any]: ...
-# def extract_text_from_html(file_path: str) -> Dict[str, Any]: ...
+# --- Main Extraction Dispatcher (No changes needed here) ---
 
 def extract_text(file_path: str, file_type: str) -> Dict[str, Any]:
     """Main extraction dispatcher based on file type."""
     logger.info(f"Dispatching extractor for file type '{file_type}' on file: {os.path.basename(file_path)}")
-    
+
     extractor_map = {
         'pdf': extract_text_from_pdf,
         'docx': extract_text_from_docx,
@@ -173,7 +227,7 @@ def extract_text(file_path: str, file_type: str) -> Dict[str, Any]:
     }
 
     extractor_func = extractor_map.get(file_type)
-    
+
     if extractor_func:
         try:
             result = extractor_func(file_path)
@@ -183,8 +237,8 @@ def extract_text(file_path: str, file_type: str) -> Dict[str, Any]:
         except Exception as e:
              # Catch unexpected errors within the specific extractor call itself
              logger.error(f"Unexpected error in extractor '{extractor_func.__name__}' for '{file_path}': {e}", exc_info=True)
-             return {"text": "", "needs_ocr": False, "error": f"Unexpected extractor error: {e}"}
+             return {"text": "", "error": f"Unexpected extractor error: {e}"}
     else:
         # This case should ideally not be reached if called from file_router with supported types
         logger.error(f"No extractor function mapped for supported type: '{file_type}' ('{file_path}')")
-        return {"text": "", "needs_ocr": False, "error": f"Internal mapping error for type {file_type}"} 
+        return {"text": "", "error": f"Internal mapping error for type {file_type}"} 

@@ -858,4 +858,24 @@ button:disabled {
 #visual-pdf-list {
     display: block;
     width: 100%;
+}
+
+/* ADDED: Styling for Repo Structure Display */
+#visualizer-structure-container {
+    /* Inherits basic card styling, can add more specific styles if needed */
+    margin-top: 2rem; /* Space above this card */
+}
+
+#visualizer-structure-text {
+    background-color: #f8f9fa; /* Light background */
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    max-height: 400px; /* Limit height and enable scrolling */
+    overflow: auto;
+    font-family: monospace; /* Use a fixed-width font */
+    font-size: 0.85rem;
+    white-space: pre; /* Preserve whitespace */
+    line-height: 1.4;
+    color: var(--text-color);
 } 
